@@ -1,0 +1,86 @@
+CREATE OR REPLACE TABLE `rakamin-kf-analytics-473201.kimia_farma.kf_analysis` AS
+
+WITH tx_clean AS (
+  SELECT
+    transaction_id,
+    date AS txn_date,
+    branch_id,
+    customer_name,
+    product_id,
+    price AS tx_price,
+    discount_percentage AS tx_discount_pct,
+    rating AS rating_transaksi
+  FROM `rakamin-kf-analytics-473201.kimia_farma.kf_final_transaction`
+),
+
+prod_clean AS (
+  SELECT
+    product_id,
+    product_name,
+    price AS product_price
+  FROM `rakamin-kf-analytics-473201.kimia_farma.kf_product`
+),
+
+branch_clean AS (
+  SELECT
+    branch_id,
+    branch_name,
+    kota,
+    provinsi,
+    rating AS rating_cabang
+  FROM `rakamin-kf-analytics-473201.kimia_farma.kf_kantor_cabang`
+),
+
+joined AS (
+  SELECT
+    t.transaction_id,
+    t.txn_date,
+    t.branch_id,
+    b.branch_name,
+    b.kota,
+    b.provinsi,
+    b.rating_cabang,
+    t.customer_name,
+    t.product_id,
+    p.product_name,
+    COALESCE(t.tx_price, p.product_price) AS actual_price,
+    IFNULL(t.tx_discount_pct, 0) AS discount_percentage,
+    t.rating_transaksi
+  FROM tx_clean t
+  LEFT JOIN prod_clean p ON t.product_id = p.product_id
+  LEFT JOIN branch_clean b ON t.branch_id = b.branch_id
+)
+
+SELECT
+  transaction_id,
+  txn_date AS date,
+  branch_id,
+  branch_name,
+  kota,
+  provinsi,
+  rating_cabang,
+  customer_name,
+  product_id,
+  product_name,
+  actual_price,
+  discount_percentage,
+  CASE
+    WHEN actual_price <= 50000 THEN 10
+    WHEN actual_price <= 100000 THEN 15
+    WHEN actual_price <= 300000 THEN 20
+    WHEN actual_price <= 500000 THEN 25
+    ELSE 30
+  END AS persentase_gross_laba,
+  ROUND(actual_price * (1 - discount_percentage/100), 2) AS nett_sales,
+  ROUND(
+    (actual_price * (1 - discount_percentage/100)) *
+    (CASE
+      WHEN actual_price <= 50000 THEN 10
+      WHEN actual_price <= 100000 THEN 15
+      WHEN actual_price <= 300000 THEN 20
+      WHEN actual_price <= 500000 THEN 25
+      ELSE 30
+    END) / 100
+  , 2) AS nett_profit,
+  rating_transaksi
+FROM joined;
